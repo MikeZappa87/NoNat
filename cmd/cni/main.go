@@ -56,7 +56,7 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 
 // cmdAdd is called for ADD requests
 func cmdAdd(args *skel.CmdArgs) error {
-	log.Info().Msg("Starting")
+	log.Info().Msg("cni plugin executed started")
 
 	conf, err := parseConfig(args.StdinData)
 	if err != nil {
@@ -172,6 +172,8 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
+	log.Info().Msg("cni plugin executed finished")
+
 	return types.PrintResult(result, conf.CNIVersion)
 }
 
@@ -192,5 +194,7 @@ func cmdDel(args *skel.CmdArgs) error {
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	skel.PluginMain(cmdAdd, nil, cmdDel, version.All, bv.BuildString("NoNat"))
+	err := skel.PluginMainWithError(cmdAdd, nil, cmdDel, version.All, bv.BuildString("NoNat"))
+
+	log.Fatal().Err(err).Msg("This wasnt good. Something bad happened. Please investigate")
 }
