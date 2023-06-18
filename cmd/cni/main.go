@@ -196,5 +196,7 @@ func main() {
 
 	err := skel.PluginMainWithError(cmdAdd, nil, cmdDel, version.All, bv.BuildString("NoNat"))
 
-	log.Fatal().Err(err).Msg("This wasnt good. Something bad happened. Please investigate")
+	if err != nil {
+		log.Fatal().Err(err).Msg("This wasnt good. Something bad happened. Please investigate")
+	}
 }
