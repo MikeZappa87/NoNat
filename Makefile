@@ -6,6 +6,10 @@ clean:
 	ip netns del cni-1234 || true
 	rm -r ./bin/ || true
 
+clean-test:
+	CNI_PATH=./bin NETCONFPATH=./tools ./tools/cnitool del nonat-conf /var/run/netns/cni-1234 || true
+	ip netns del cni-1234 || true
+
 cnitool:
 	cp ./tools/host-local ./bin/
 	ip netns add cni-1234
