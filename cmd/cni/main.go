@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"syscall"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
@@ -94,21 +95,22 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	defer root.Close()
 
-	veth, err := plugin.RandomVethName()
+	name, err := plugin.RandomVethName()
 
 	if err != nil {
 		return err
 	}
 
+	veth := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{
+			Name: args.IfName,
+		},
+		PeerName:      name,
+		PeerNamespace: netlink.NsFd(int(root.Fd())),
+	}
+
 	//container network namespace
 	if err := ns.WithNetNSPath(args.Netns, func(nn ns.NetNS) error {
-		veth := &netlink.Veth{
-			LinkAttrs: netlink.LinkAttrs{
-				Name: args.IfName,
-			},
-			PeerName:      veth,
-			PeerNamespace: netlink.NsFd(int(root.Fd())),
-		}
 
 		if err := netlink.LinkAdd(veth); err != nil {
 			return err
@@ -126,16 +128,22 @@ func cmdAdd(args *skel.CmdArgs) error {
 			return err
 		}
 
+		l, err := netlink.LinkByName(args.IfName)
+
+		if err != nil {
+			return err
+		}
+
 		for _, v := range result.Routes {
-			if l, err := netlink.LinkByName(args.IfName); err != nil {
+			route := netlink.Route{
+				Dst:       &v.Dst,
+				LinkIndex: l.Attrs().Index,
+			}
+
+			if err := netlink.RouteAdd(&route); err == syscall.EEXIST {
+				log.Trace().Msg("route already exist...skipping")
+			} else if err != nil {
 				return err
-			} else {
-				if err := netlink.RouteAdd(&netlink.Route{
-					Dst:       &v.Dst,
-					LinkIndex: l.Attrs().Index,
-				}); err != nil {
-					return err
-				}
 			}
 		}
 
@@ -145,7 +153,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	//root network namespace
-	if l, err := netlink.LinkByName(veth); err != nil {
+	if l, err := netlink.LinkByName(name); err != nil {
 		return err
 	} else {
 		if err = netlink.LinkSetUp(l); err != nil {
@@ -153,20 +161,25 @@ func cmdAdd(args *skel.CmdArgs) error {
 		}
 
 		for _, v := range result.IPs {
-			if err = netlink.RouteAdd(&netlink.Route{
+
+			route := &netlink.Route{
 
 				Dst: &net.IPNet{
 					IP:   v.Address.IP,
 					Mask: net.CIDRMask(32, 32),
 				},
 				LinkIndex: l.Attrs().Index,
-			}); err != nil {
+			}
+
+			if err := netlink.RouteAdd(route); err == syscall.EEXIST {
+				log.Trace().Msg("route already exist...skipping")
+			} else if err != nil {
 				return err
 			}
 		}
 	}
 
-	_, err = sysctl.Sysctl(fmt.Sprintf("net/ipv4/conf/%s/proxy_arp", veth), "1")
+	_, err = sysctl.Sysctl(fmt.Sprintf("net/ipv4/conf/%s/proxy_arp", name), "1")
 
 	if err != nil {
 		return err
